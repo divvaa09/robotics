@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+
+import rospy
+from duckietown_msgs.msg import Twist2DStamped, FSMState
+
+class SquareDriver:
+    def __init__(self):
+        # Initialize class variables
+        self.velocity_msg = Twist2DStamped()
+
+        # Initialize ROS node
+        rospy.init_node('square_driver_node', anonymous=True)
+        
+        # Setup Pub/Sub
+        self.velocity_pub = rospy.Publisher('/madtp/car_cmd_switch_node/cmd', Twist2DStamped, queue_size=1)
+        rospy.Subscriber('/madtp/fsm_node/mode', FSMState, self.state_callback, queue_size=1)
+        
+    def state_callback(self, state_msg):
+        rospy.loginfo("Current State: %s", state_msg.state)
+        if state_msg.state == "NORMAL_JOYSTICK_CONTROL":
+            self.halt_robot()
+        elif state_msg.state == "LANE_FOLLOWING":
+            rospy.sleep(1)  # Allow time for node initialization
+            self.drive_square()
+
+    def halt_robot(self):
+        self.velocity_msg.header.stamp = rospy.Time.now()
+        self.velocity_msg.v = 0.0
+        self.velocity_msg.omega = 0.0
+        self.velocity_pub.publish(self.velocity_msg)
+
+    def drive_square(self):
+        for _ in range(4):  # Loop to drive the four sides of the square
+            # Move forward
+            self.velocity_msg.header.stamp = rospy.Time.now()
+            self.velocity_msg.v = 0.5  # Linear velocity
+            self.velocity_msg.omega = 0.0
+            self.velocity_pub.publish(self.velocity_msg)
+            rospy.loginfo("Moving forward!")
+            rospy.sleep(2)  # Duration for moving forward
+            
+            self.halt_robot()
+            rospy.sleep(1)  # Pause before turning
+            
+            # Turn left
+            self.velocity_msg.header.stamp = rospy.Time.now()
+            self.velocity_msg.v = 0.0
+            self.velocity_msg.omega = 0.5  # Angular velocity
+            self.velocity_pub.publish(self.velocity_msg)
+            rospy.loginfo("Turning!")
+            rospy.sleep(1)  # Duration for turning
+            
+            self.halt_robot()
+            rospy.sleep(1)  # Pause after turning
+
+        self.halt_robot()  # Ensure the robot is stopped after completing the square
+
+    def run(self):
+        rospy.spin()  # Keep the node running
+
+if __name__ == '__main__':
+    try:
+        square_driver = SquareDriver()
+        square_driver.run()
+    except rospy.ROSInterruptException:
+        pass

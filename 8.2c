@@ -1,0 +1,71 @@
+#!/usr/bin/env python
+
+import rospy
+from sensor_msgs.msg import CompressedImage
+from duckietown_msgs.msg import Twist2DStamped, FSMState, BoolStamped
+from apriltag_ros.msg import AprilTagDetectionArray
+from std_msgs.msg import String
+
+class Autopilot:
+    def __init__(self):
+        rospy.init_node('autopilot_node', anonymous=True)
+
+        self.image_sub = rospy.Subscriber('/<your_duckiebot_name>/camera_node/image/compressed', CompressedImage, self.image_callback)
+        self.state_sub = rospy.Subscriber('/<your_duckiebot_name>/fsm_node/mode', FSMState, self.state_callback)
+        self.tag_sub = rospy.Subscriber('/<your_duckiebot_name>/apriltag_detector_node/detections', AprilTagDetectionArray, self.tag_callback)
+
+        self.cmd_pub = rospy.Publisher('/<your_duckiebot_name>/joy_mapper_node/car_cmd', Twist2DStamped, queue_size=1)
+        self.state_pub = rospy.Publisher('/<your_duckiebot_name>/fsm_node/set_state', FSMState, queue_size=1)
+
+        self.stop_sign_detected = False
+        self.wait_time = 3  # Time to wait at the stop sign in seconds
+        self.robot_state = None
+
+        rospy.loginfo("Autopilot node initialized")
+
+    def image_callback(self, data):
+        # Process the image for lane following, if needed
+        rospy.loginfo("Image received")
+
+    def state_callback(self, data):
+        self.robot_state = data.state
+        rospy.loginfo(f"State updated: {self.robot_state}")
+
+    def tag_callback(self, data):
+        if self.robot_state == "LANE_FOLLOWING":
+            for detection in data.detections:
+                if detection.id[0] == 1:  # Assuming 1 is the ID for the stop sign
+                    rospy.loginfo("Stop sign detected")
+                    self.stop_sign_detected = True
+                    self.handle_stop_sign()
+
+    def handle_stop_sign(self):
+        if self.stop_sign_detected:
+            self.set_state("NORMAL_JOYSTICK_CONTROL")
+            self.stop_robot()
+
+            rospy.sleep(self.wait_time)
+
+            self.stop_sign_detected = False
+            self.set_state("LANE_FOLLOWING")
+
+    def set_state(self, state):
+        fsm_state = FSMState()
+        fsm_state.state = state
+        self.state_pub.publish(fsm_state)
+        self.robot_state = state
+        rospy.loginfo(f"State set to: {state}")
+
+    def stop_robot(self):
+        stop_cmd = Twist2DStamped()
+        stop_cmd.v = 0
+        stop_cmd.omega = 0
+        self.cmd_pub.publish(stop_cmd)
+        rospy.loginfo("Robot stopped")
+
+if __name__ == '__main__':
+    try:
+        autopilot = Autopilot()
+        rospy.spin()
+    except rospy.ROSInterruptException:
+        rospy.loginfo("Autopilot node terminated.")
